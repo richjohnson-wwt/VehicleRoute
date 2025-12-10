@@ -1,0 +1,22 @@
+# Per-client parser configuration for PNC
+# Define one or more sheets and the exact column names to use on each.
+# header_row is 0-based.
+
+sheets:
+  - name: "PNC Workstations"
+    header_row: 0
+    columns:
+      site_name: "SiteName"
+      address: "Address"
+      city: "City"
+      state: "State"
+      zip: "Zip"
+
+  - name: "PNC Phone"
+    header_row: 0
+    columns:
+      site_name: "SiteName"
+      address: "Address"
+      city: "City"
+      state: "State"
+      zip: "Zip"

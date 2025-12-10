@@ -1,0 +1,13 @@
+# Per-client parser configuration for Ascension
+# Single sheet with explicit column names.
+# header_row is 0-based.
+
+sheets:
+  - name: "Sheet1"
+    header_row: 0
+    columns:
+      site_name: "Lab name"
+      address: "Address (Location)"
+      city: "City"
+      state: "State"
+      zip: "Zip Code"
