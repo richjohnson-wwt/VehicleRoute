@@ -1,10 +1,10 @@
 
 uv add pandas openpyxl pyqt6 pyyaml geopy
 
-openpyxl is for parsing the XLSX files
-pyqt6 is for the GUI
-pandas is for data manipulation
-pyyaml is for per-client config files
+* openpyxl is for parsing the XLSX files
+* pyqt6 is for the GUI
+* pandas is for data manipulation
+* pyyaml is for per-client config files
 
 # Parse
 uv run python scripts/parse_sites.py "data/Ascension Health Site List.xlsx" --config configs/ascension.yaml --output data/ascension_sites_config.csv --errors data/ascension_sites_config_errors.csv --debug

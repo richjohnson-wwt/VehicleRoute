@@ -1,4 +1,4 @@
-Product Owner
+From Product Owner
 -------------
 Great meeting today! If you have any questions, please let me know.  If we could touch base every couple of days that would be great.
  
@@ -37,7 +37,7 @@ Custom Parameters:
 * Crawl, Walk, Run – Ramp Phase approach
  
 
-ChatGpt Analysis
+Project Outline
 -------------------
 
 VRPTW (Vehicle Routing Problem with Time Windows)
