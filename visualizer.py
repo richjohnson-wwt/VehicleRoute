@@ -62,6 +62,7 @@ class VisualizerWindow(QMainWindow):
         # OSM/Folium controls
         osm_row = QHBoxLayout()
         self.btn_osm = QPushButton("Open OSM Map (Browser)", self)
+        self.btn_cluster_map = QPushButton("Cluster + Map", self)
         self.spin_teams = QSpinBox(self)
         self.spin_teams.setRange(0, 100)
         self.spin_teams.setValue(0)
@@ -71,6 +72,7 @@ class VisualizerWindow(QMainWindow):
         osm_row.addWidget(self.btn_osm)
         osm_row.addWidget(self.spin_teams)
         osm_row.addWidget(self.chk_routes)
+        osm_row.addWidget(self.btn_cluster_map)
         self.canvas = PlotCanvas(self)
 
         layout.addWidget(self.btn_open)
@@ -82,11 +84,13 @@ class VisualizerWindow(QMainWindow):
         self.btn_open.clicked.connect(self.on_open_clicked)
         self.btn_route.clicked.connect(self.on_route_clicked)
         self.btn_osm.clicked.connect(self.on_osm_clicked)
+        self.btn_cluster_map.clicked.connect(self.on_cluster_map_clicked)
 
         # Data placeholders for currently loaded points
         self._lons: list[float] = []
         self._lats: list[float] = []
         self._proc: Optional[QProcess] = None
+        self._cluster_paths: dict[str, str] = {}
 
     def on_open_clicked(self) -> None:
         csv_path, _ = QFileDialog.getOpenFileName(
@@ -178,6 +182,87 @@ class VisualizerWindow(QMainWindow):
             QMessageBox.warning(self, "OSM Map", "Failed to generate map. See console for details.")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(out_path))
+
+    # ---- Cluster + Map: KMeans teams + per-team TSP, then Folium map ----
+    def on_cluster_map_clicked(self) -> None:
+        csv_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select geocoded CSV (with lat,lon)",
+            str(Path.cwd() / "data"),
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        if not csv_path:
+            return
+
+        base = Path(csv_path)
+        stem = base.stem
+        out_dir = base.parent
+        with_teams = str(out_dir / f"{stem}_with_teams.csv")
+        routes_csv = str(out_dir / f"{stem}_cluster_routes.csv")
+        map_html = str(out_dir / f"{stem}_map.html")
+
+        teams = max(1, int(self.spin_teams.value()))
+        # Step 1: run cluster_tsp.py
+        args = [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "scripts" / "cluster_tsp.py"),
+            csv_path,
+            "--teams",
+            str(teams),
+            "--time-limit",
+            "5",
+            "--output-teams",
+            with_teams,
+            "--output-routes",
+            routes_csv,
+        ]
+
+        # Save state for step 2
+        self._cluster_paths = {
+            "with_teams": with_teams,
+            "routes": routes_csv,
+            "map": map_html,
+        }
+
+        if self._proc is not None:
+            try:
+                self._proc.kill()
+            except Exception:
+                pass
+            self._proc = None
+        self._proc = QProcess(self)
+        self._proc.finished.connect(self._on_cluster_done)
+        self._proc.start(args[0], args[1:])
+
+    def _on_cluster_done(self, code: int, status) -> None:  # type: ignore[override]
+        if code != 0:
+            QMessageBox.warning(self, "Cluster + Map", "Clustering step failed. See console output.")
+            return
+        # Step 2: run make_map.py with routes-file
+        with_teams = self._cluster_paths.get("with_teams", "")
+        routes_csv = self._cluster_paths.get("routes", "")
+        map_html = self._cluster_paths.get("map", "")
+        args2 = [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "scripts" / "make_map.py"),
+            with_teams,
+            "--team-col",
+            "team",
+            "--routes-file",
+            routes_csv,
+            "--output",
+            map_html,
+        ]
+        # reuse process for step 2
+        self._proc = QProcess(self)
+        self._proc.finished.connect(lambda c, s: self._on_map_done(map_html, c))
+        self._proc.start(args2[0], args2[1:])
+
+    def _on_map_done(self, map_html: str, code: int) -> None:
+        if code != 0:
+            QMessageBox.warning(self, "Cluster + Map", "Map generation failed. See console output.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(map_html))
 
     # ---- OR-Tools routing over current points ----
     def on_route_clicked(self) -> None:

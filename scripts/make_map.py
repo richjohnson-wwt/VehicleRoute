@@ -31,6 +31,7 @@ def make_map(
     draw_routes: bool = False,
     route_point_cap: int = 50,
     route_time_limit_sec: int = 3,
+    routes_file: Optional[Path] = None,
 ) -> Path:
     if df.empty:
         raise ValueError("No points to plot")
@@ -83,8 +84,40 @@ def make_map(
         else:
             folium.Marker([lat, lon], popup=popup).add_to(target)
 
-    # Optional: draw per-team routes using OR-Tools TSP over capped points
-    if draw_routes and (team_col and team_col in df.columns):
+    # Optional: draw per-team routes from a precomputed routes file (preferred)
+    if routes_file is not None:
+        rf = Path(routes_file)
+        if rf.exists():
+            r = pd.read_csv(rf)
+            # Normalize expected columns: allow team_id->team, sequence->seq
+            if "team" not in r.columns and "team_id" in r.columns:
+                r = r.rename(columns={"team_id": "team"})
+            if "seq" not in r.columns and "sequence" in r.columns:
+                r = r.rename(columns={"sequence": "seq"})
+            required = {"team", "seq", "lat", "lon"}
+            if required.issubset(r.columns):
+                # Filter out synthetic END nodes if present
+                if "site_name" in r.columns:
+                    r = r[~r["site_name"].astype(str).str.startswith("END_")]
+                # Ensure numeric and sorted
+                r["seq"] = pd.to_numeric(r["seq"], errors="coerce")
+                r = r.dropna(subset=["seq", "lat", "lon"]).copy()
+                for team, g in r.groupby("team"):
+                    g = g.sort_values("seq")
+                    coords = list(zip(g["lat"].astype(float), g["lon"].astype(float)))
+                    if len(coords) >= 2:
+                        folium.PolyLine(
+                            locations=coords,
+                            color=color_for(str(team)),
+                            weight=3,
+                            opacity=0.8,
+                            tooltip=f"Team {team} precomputed route (n={len(coords)})",
+                        ).add_to(m)
+        else:
+            print(f"[WARN] routes file not found: {routes_file}")
+
+    # Or compute on the fly: per-team routes using OR-Tools TSP over capped points
+    elif draw_routes and (team_col and team_col in df.columns):
         for team, g in df.groupby(team_col):
             # Cap to avoid heavy runs; take first N by appearance
             sub = g.head(route_point_cap).copy()
@@ -173,6 +206,7 @@ def main() -> None:
     parser.add_argument("--zoom", type=int, default=5, help="Initial zoom level (default 5)")
     parser.add_argument("--team-col", type=str, default=None, help="Optional column name for team assignment to color markers")
     parser.add_argument("--routes", action="store_true", help="Overlay per-team TSP routes (capped)")
+    parser.add_argument("--routes-file", type=Path, default=None, help="CSV with precomputed routes: team,seq,lat,lon")
     parser.add_argument("--route-limit", type=int, default=50, help="Max points per team for route overlay (default 50)")
     parser.add_argument("--route-timeout", type=int, default=3, help="Route solver time limit per team in seconds (default 3)")
     parser.add_argument("--kmeans-teams", type=int, default=None, help="If provided and team-col is absent, auto-assign KMeans clusters as teams")
@@ -200,6 +234,7 @@ def main() -> None:
         draw_routes=args.routes,
         route_point_cap=args.route_limit,
         route_time_limit_sec=args.route_timeout,
+        routes_file=args.routes_file,
     )
 
     print(f"Wrote map to {args.output}")
