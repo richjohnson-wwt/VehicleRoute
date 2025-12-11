@@ -1,5 +1,5 @@
 
-uv add pandas openpyxl pyqt6 pyyaml geopy matplotlib ortools folium
+uv add pandas openpyxl pyqt6 pyyaml geopy matplotlib ortools folium scikit-learn
 
 * openpyxl is for parsing the XLSX files
 * pyqt6 is for the GUI
@@ -8,6 +8,7 @@ uv add pandas openpyxl pyqt6 pyyaml geopy matplotlib ortools folium
 * matplotlib is for visualizing the routes
 * ortools is for routing
 * folium is for visualizing the routes on a map
+* scikit-learn is for clustering
 
 # Parse
 uv run python scripts/parse_sites.py "data/Ascension Health Site List.xlsx" --config configs/ascension.yaml --output data/ascension_sites_config.csv --errors data/ascension_sites_config_errors.csv --debug

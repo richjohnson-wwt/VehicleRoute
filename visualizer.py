@@ -11,11 +11,17 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QFileDialog,
     QMessageBox,
+    QHBoxLayout,
+    QSpinBox,
+    QCheckBox,
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 import math
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtCore import QProcess
 
 
 class PlotCanvas(FigureCanvas):
@@ -53,19 +59,34 @@ class VisualizerWindow(QMainWindow):
 
         self.btn_open = QPushButton("Open geocoded CSV", self)
         self.btn_route = QPushButton("Compute OR-Tools Route", self)
+        # OSM/Folium controls
+        osm_row = QHBoxLayout()
+        self.btn_osm = QPushButton("Open OSM Map (Browser)", self)
+        self.spin_teams = QSpinBox(self)
+        self.spin_teams.setRange(0, 100)
+        self.spin_teams.setValue(0)
+        self.spin_teams.setToolTip("Number of teams for KMeans auto-assignment (0 = no auto teams)")
+        self.chk_routes = QCheckBox("Overlay Routes", self)
+        self.chk_routes.setChecked(False)
+        osm_row.addWidget(self.btn_osm)
+        osm_row.addWidget(self.spin_teams)
+        osm_row.addWidget(self.chk_routes)
         self.canvas = PlotCanvas(self)
 
         layout.addWidget(self.btn_open)
         layout.addWidget(self.btn_route)
+        layout.addLayout(osm_row)
         layout.addWidget(self.canvas)
         self.setCentralWidget(central)
 
         self.btn_open.clicked.connect(self.on_open_clicked)
         self.btn_route.clicked.connect(self.on_route_clicked)
+        self.btn_osm.clicked.connect(self.on_osm_clicked)
 
         # Data placeholders for currently loaded points
         self._lons: list[float] = []
         self._lats: list[float] = []
+        self._proc: Optional[QProcess] = None
 
     def on_open_clicked(self) -> None:
         csv_path, _ = QFileDialog.getOpenFileName(
@@ -105,6 +126,58 @@ class VisualizerWindow(QMainWindow):
         self._lons = lons
         self._lats = lats
         self.canvas.plot_points(lons, lats, title)
+
+    # ---- Generate Folium OSM map in browser ----
+    def on_osm_clicked(self) -> None:
+        csv_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select geocoded CSV (with lat,lon)",
+            str(Path.cwd() / "data"),
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        if not csv_path:
+            return
+
+        suggested_out = Path(csv_path).with_suffix("")
+        suggested_out = suggested_out.parent / (suggested_out.name + "_map.html")
+        out_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save OSM map as",
+            str(suggested_out),
+            "HTML Files (*.html)",
+        )
+        if not out_path:
+            return
+
+        args = [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "scripts" / "make_map.py"),
+            csv_path,
+            "--output",
+            out_path,
+        ]
+        teams = int(self.spin_teams.value())
+        if teams > 0:
+            args += ["--kmeans-teams", str(teams)]
+        if self.chk_routes.isChecked():
+            args += ["--routes"]
+
+        # Run generator without freezing UI
+        if self._proc is not None:
+            try:
+                self._proc.kill()
+            except Exception:
+                pass
+            self._proc = None
+        self._proc = QProcess(self)
+        self._proc.finished.connect(lambda code, status: self._on_osm_finished(out_path, code))
+        self._proc.start(args[0], args[1:])
+
+    def _on_osm_finished(self, out_path: str, code: int) -> None:
+        if code != 0:
+            QMessageBox.warning(self, "OSM Map", "Failed to generate map. See console for details.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(out_path))
 
     # ---- OR-Tools routing over current points ----
     def on_route_clicked(self) -> None:

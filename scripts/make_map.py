@@ -9,6 +9,7 @@ import pandas as pd
 from folium.plugins import MarkerCluster
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 import math
+from sklearn.cluster import KMeans
 
 
 def load_points(csv_path: Path) -> pd.DataFrame:
@@ -174,16 +175,28 @@ def main() -> None:
     parser.add_argument("--routes", action="store_true", help="Overlay per-team TSP routes (capped)")
     parser.add_argument("--route-limit", type=int, default=50, help="Max points per team for route overlay (default 50)")
     parser.add_argument("--route-timeout", type=int, default=3, help="Route solver time limit per team in seconds (default 3)")
+    parser.add_argument("--kmeans-teams", type=int, default=None, help="If provided and team-col is absent, auto-assign KMeans clusters as teams")
 
     args = parser.parse_args()
 
     df = load_points(args.input)
+    # Optional KMeans assignment to create a team column
+    team_col = args.team_col
+    if team_col is None and args.kmeans_teams and args.kmeans_teams > 0:
+        # Use lat/lon for clustering; simple KMeans, no scaling
+        coords = df[["lat", "lon"]].astype(float).to_numpy()
+        k = max(1, int(args.kmeans_teams))
+        kmeans = KMeans(n_clusters=k, n_init="auto", random_state=42)
+        labels = kmeans.fit_predict(coords)
+        df = df.copy()
+        df["team"] = [f"T{int(i)+1}" for i in labels]
+        team_col = "team"
     make_map(
         df,
         output_html=args.output,
         zoom_start=args.zoom,
         cluster=(not args.no_cluster),
-        team_col=args.team_col,
+        team_col=team_col,
         draw_routes=args.routes,
         route_point_cap=args.route_limit,
         route_time_limit_sec=args.route_timeout,
